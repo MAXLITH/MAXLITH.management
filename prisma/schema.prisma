@@ -1,0 +1,556 @@
+// Prisma schema for MAXLITH Management Platform
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// Users & Authentication
+// ============================================
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String?
+  firstName    String
+  lastName     String
+  avatar       String?
+  status       UserStatus @default(ACTIVE)
+  departmentId String?
+
+  department   Department? @relation("DepartmentMembers", fields: [departmentId], references: [id])
+
+  // Relations
+  roles            UserRole[]
+  managedDepartments Department[] @relation("DepartmentManager")
+  createdProjects  Project[]      @relation("ProjectCreator")
+  managedProjects  Project[]      @relation("ProjectManager")
+  projectMembers   ProjectMember[]
+  assignedTasks    Task[]         @relation("TaskAssignee")
+  createdTasks     Task[]         @relation("TaskCreator")
+  taskComments     TaskComment[]
+  dailyReports     DailyReport[]
+  leaveRequests    LeaveRequest[] @relation("LeaveRequester")
+  approvedLeaves   LeaveRequest[] @relation("LeaveApprover")
+  leaveBalance     LeaveBalance?
+  announcements    Announcement[]
+  createdMeetings  Meeting[]      @relation("MeetingCreator")
+  meetingParticipations MeetingParticipant[]
+  uploadedFiles    File[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+  activities       Activity[]     @relation("ActivityActor")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  ONBOARDING
+  OFFBOARDED
+}
+
+model Role {
+  id          String @id @default(cuid())
+  name        String @unique
+  description String @default("")
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  createdAt DateTime @default(now())
+
+  @@map("roles")
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id         String @id @default(cuid())
+  roleId     String
+  permission String
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission])
+  @@map("role_permissions")
+}
+
+// ============================================
+// Departments
+// ============================================
+
+model Department {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  managerId   String?
+
+  manager  User?  @relation("DepartmentManager", fields: [managerId], references: [id])
+  members  User[] @relation("DepartmentMembers")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("departments")
+}
+
+// ============================================
+// Projects
+// ============================================
+
+model Project {
+  id            String        @id @default(cuid())
+  name          String
+  description   String?       @db.Text
+  status        ProjectStatus @default(PLANNING)
+  priority      Priority      @default(MEDIUM)
+  deadline      DateTime?
+  managerId     String?
+  repositoryUrl String?
+  techStack     String[]      @default([])
+  createdById   String
+
+  manager   User? @relation("ProjectManager", fields: [managerId], references: [id])
+  createdBy User  @relation("ProjectCreator", fields: [createdById], references: [id])
+
+  members   ProjectMember[]
+  tasks     Task[]
+  documents Document[]
+  files     File[]
+  meetings  Meeting[]
+  reports   DailyReport[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model ProjectMember {
+  id        String @id @default(cuid())
+  projectId String
+  userId    String
+  role      String @default("MEMBER")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+// ============================================
+// Tasks
+// ============================================
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?    @db.Text
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  projectId   String?
+  assigneeId  String?
+  createdById String
+  deadline    DateTime?
+  tags        String[]   @default([])
+
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assignee  User?    @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy User     @relation("TaskCreator", fields: [createdById], references: [id])
+
+  comments    TaskComment[]
+  attachments TaskAttachment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  COMPLETED
+  BLOCKED
+}
+
+model TaskComment {
+  id      String @id @default(cuid())
+  taskId  String
+  userId  String
+  content String @db.Text
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("task_comments")
+}
+
+model TaskAttachment {
+  id       String @id @default(cuid())
+  taskId   String
+  fileName String
+  fileUrl  String
+  fileSize Int?
+  mimeType String?
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("task_attachments")
+}
+
+// ============================================
+// Documentation
+// ============================================
+
+model DocumentCategory {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  parentId String?
+
+  parent   DocumentCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children DocumentCategory[] @relation("CategoryHierarchy")
+  documents Document[]
+
+  @@map("document_categories")
+}
+
+model Document {
+  id          String  @id @default(cuid())
+  title       String
+  content     String  @db.Text
+  categoryId  String?
+  projectId   String?
+  createdById String
+  updatedById String?
+
+  category  DocumentCategory? @relation(fields: [categoryId], references: [id])
+  project   Project?          @relation(fields: [projectId], references: [id])
+
+  versions DocumentVersion[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id         String @id @default(cuid())
+  documentId String
+  content    String @db.Text
+  editedById String
+  version    Int
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("document_versions")
+}
+
+// ============================================
+// Daily Reports
+// ============================================
+
+model DailyReport {
+  id          String  @id @default(cuid())
+  userId      String
+  projectId   String?
+  workedOn    String  @db.Text
+  completed   String  @db.Text
+  nextTasks   String  @db.Text
+  blockers    String? @db.Text
+  hoursWorked Float   @default(8)
+  date        DateTime @db.Date
+
+  user    User     @relation(fields: [userId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
+  @@map("daily_reports")
+}
+
+// ============================================
+// Leave Management
+// ============================================
+
+model LeaveRequest {
+  id         String      @id @default(cuid())
+  userId     String
+  type       LeaveType
+  startDate  DateTime    @db.Date
+  endDate    DateTime    @db.Date
+  reason     String      @db.Text
+  status     LeaveStatus @default(PENDING)
+  approverId String?
+
+  user     User  @relation("LeaveRequester", fields: [userId], references: [id])
+  approver User? @relation("LeaveApprover", fields: [approverId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("leave_requests")
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  ANNUAL
+  EMERGENCY
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveBalance {
+  id        String @id @default(cuid())
+  userId    String @unique
+  casual    Int    @default(12)
+  sick      Int    @default(10)
+  annual    Int    @default(15)
+  emergency Int    @default(5)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("leave_balances")
+}
+
+// ============================================
+// Announcements
+// ============================================
+
+model Announcement {
+  id       String              @id @default(cuid())
+  title    String
+  content  String              @db.Text
+  authorId String
+  priority AnnouncementPriority @default(NORMAL)
+  isPinned Boolean             @default(false)
+
+  author User @relation(fields: [authorId], references: [id])
+  reads  AnnouncementRead[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("announcements")
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model AnnouncementRead {
+  id             String @id @default(cuid())
+  announcementId String
+  userId         String
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  readAt DateTime @default(now())
+
+  @@unique([announcementId, userId])
+  @@map("announcement_reads")
+}
+
+// ============================================
+// Meetings
+// ============================================
+
+model Meeting {
+  id          String      @id @default(cuid())
+  title       String
+  description String?     @db.Text
+  date        DateTime    @db.Date
+  time        String
+  projectId   String?
+  createdById String
+  meetingLink String?
+  type        MeetingType @default(TEAM)
+
+  project   Project? @relation(fields: [projectId], references: [id])
+  createdBy User     @relation("MeetingCreator", fields: [createdById], references: [id])
+
+  participants MeetingParticipant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("meetings")
+}
+
+enum MeetingType {
+  TEAM
+  PROJECT
+  CLIENT
+  TECHNICAL
+  MANAGEMENT
+}
+
+model MeetingParticipant {
+  id        String @id @default(cuid())
+  meetingId String
+  userId    String
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([meetingId, userId])
+  @@map("meeting_participants")
+}
+
+// ============================================
+// Files
+// ============================================
+
+model File {
+  id           String  @id @default(cuid())
+  name         String
+  url          String
+  category     String  @default("General")
+  projectId    String?
+  uploadedById String
+  size         Int?
+  mimeType     String?
+
+  project    Project? @relation(fields: [projectId], references: [id])
+  uploadedBy User     @relation(fields: [uploadedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("files")
+}
+
+// ============================================
+// Notifications
+// ============================================
+
+model Notification {
+  id           String  @id @default(cuid())
+  userId       String
+  type         String
+  title        String
+  message      String
+  resourceId   String?
+  resourceType String?
+  isRead       Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ============================================
+// Audit Logs
+// ============================================
+
+model AuditLog {
+  id         String  @id @default(cuid())
+  actorId    String
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  timestamp DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action])
+  @@index([resource])
+  @@map("audit_logs")
+}
+
+// ============================================
+// Activity Feed
+// ============================================
+
+model Activity {
+  id           String  @id @default(cuid())
+  actorId      String
+  action       String
+  resource     String
+  resourceId   String?
+  resourceName String?
+  metadata     Json?
+
+  actor User @relation("ActivityActor", fields: [actorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@map("activities")
+}
+
+// ============================================
+// System Settings
+// ============================================
+
+model SystemSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Json
+
+  updatedAt DateTime @updatedAt
+
+  @@map("system_settings")
+}

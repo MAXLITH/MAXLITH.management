@@ -32,6 +32,19 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# scratch & assistant files
+scratch_*
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
+
+# local databases
+prisma/pglite_data/
+prisma/*.db
+*.db
 
 # vercel
 .vercel
@@ -39,3 +52,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
