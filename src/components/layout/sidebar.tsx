@@ -322,9 +322,17 @@ export default function Sidebar({ user }: SidebarProps) {
           {!isCollapsed ? (
             <div className="flex items-center justify-between">
               <Link href="/me" className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xs font-semibold shrink-0">
-                  {userInitials}
-                </div>
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={`${user?.firstName} ${user?.lastName}`}
+                    className="w-9 h-9 rounded-full object-cover border border-[var(--border)] shrink-0"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                    {userInitials}
+                  </div>
+                )}
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                     {user?.firstName} {user?.lastName}
@@ -354,9 +362,17 @@ export default function Sidebar({ user }: SidebarProps) {
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Link href="/me">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xs font-semibold">
-                  {userInitials}
-                </div>
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={`${user?.firstName} ${user?.lastName}`}
+                    className="w-9 h-9 rounded-full object-cover border border-[var(--border)]"
+                  />
+                ) : (
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xs font-semibold">
+                    {userInitials}
+                  </div>
+                )}
               </Link>
               <button
                 onClick={toggleCollapsed}

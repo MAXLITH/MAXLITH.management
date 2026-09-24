@@ -138,12 +138,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
               },
             });
 
-            // If OAuth user does not exist in DB, create user with DEVELOPER role
+            // If OAuth user does not exist in DB, create user with default EMPLOYEE role
             if (!dbUser) {
               const nameParts = (user.name || "").trim().split(" ");
               const firstName = nameParts[0] || "User";
               const lastName = nameParts.slice(1).join(" ") || "";
-              const devRole = await prisma.role.findUnique({ where: { name: "DEVELOPER" } });
+              
+              const defaultRole = (await prisma.role.findUnique({ where: { name: "EMPLOYEE" } })) ||
+                (await prisma.role.findUnique({ where: { name: "DEVELOPER" } }));
 
               dbUser = await prisma.user.create({
                 data: {
@@ -152,10 +154,35 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                   lastName,
                   avatar: user.image,
                   status: "ACTIVE",
-                  roles: devRole
-                    ? { create: { roleId: devRole.id } }
+                  roles: defaultRole
+                    ? { create: { roleId: defaultRole.id } }
                     : undefined,
+                  leaveBalance: {
+                    create: {
+                      casual: 12,
+                      sick: 10,
+                      annual: 15,
+                      emergency: 5,
+                    },
+                  },
                 },
+                include: {
+                  roles: {
+                    include: {
+                      role: {
+                        include: {
+                          permissions: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+            } else if (user.image && dbUser.avatar !== user.image) {
+              // Sync user profile avatar if updated
+              dbUser = await prisma.user.update({
+                where: { id: dbUser.id },
+                data: { avatar: user.image },
                 include: {
                   roles: {
                     include: {
@@ -173,7 +200,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             const roleNames = dbUser.roles.map(
               (ur: any) => ur.role.name as RoleName
             );
-            const roles = roleNames.length > 0 ? roleNames : (["DEVELOPER"] as RoleName[]);
+            const roles = roleNames.length > 0 ? roleNames : (["EMPLOYEE"] as RoleName[]);
             const permissions = getPermissionsForRoles(roles);
 
             token.id = dbUser.id;
@@ -185,10 +212,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           }
         } catch (dbError) {
           console.error("Error linking OAuth user to database:", dbError);
-          // Fallback to default roles if DB fails
           if (!token.roles || (token.roles as string[]).length === 0) {
-            token.roles = ["DEVELOPER"];
-            token.permissions = getPermissionsForRoles(["DEVELOPER"]);
+            token.roles = ["EMPLOYEE"];
+            token.permissions = getPermissionsForRoles(["EMPLOYEE"]);
           }
         }
       }

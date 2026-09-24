@@ -14,31 +14,41 @@ export async function GET() {
   if (permErr) return permErr;
 
   try {
-    const users = await prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        avatar: true,
-        status: true,
-        department: {
-          select: { id: true, name: true },
-        },
-        roles: {
-          select: {
-            role: {
-              select: { id: true, name: true },
+    const [users, departments, roles] = await Promise.all([
+      prisma.user.findMany({
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          avatar: true,
+          status: true,
+          department: {
+            select: { id: true, name: true },
+          },
+          roles: {
+            select: {
+              role: {
+                select: { id: true, name: true },
+              },
             },
           },
+          createdAt: true,
+          updatedAt: true,
         },
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+      }),
+      prisma.department.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      prisma.role.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, description: true },
+      }),
+    ]);
 
-    const formatted = users.map((u) => ({
+    const formattedUsers = users.map((u) => ({
       id: u.id,
       email: u.email,
       firstName: u.firstName,
@@ -54,7 +64,11 @@ export async function GET() {
       updatedAt: u.updatedAt.toISOString(),
     }));
 
-    return NextResponse.json(formatted);
+    return NextResponse.json({
+      users: formattedUsers,
+      departments,
+      roles,
+    });
   } catch (error) {
     console.error("Error fetching admin users:", error);
     return NextResponse.json(
@@ -85,13 +99,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const cleanEmail = email.toLowerCase().trim();
     const existingUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+      where: { email: cleanEmail },
     });
 
     if (existingUser) {
       return NextResponse.json(
-        { error: "A user with this email already exists" },
+        { error: "A user account with this email already exists" },
         { status: 400 }
       );
     }
@@ -99,7 +114,6 @@ export async function POST(request: Request) {
     const passwordHash = await hash(password, 10);
     const targetRoleName = roleName || "EMPLOYEE";
 
-    // Find role ID
     const roleRecord = await prisma.role.findUnique({
       where: { name: targetRoleName },
     });
@@ -113,14 +127,23 @@ export async function POST(request: Request) {
 
     const newUser = await prisma.user.create({
       data: {
-        email: email.toLowerCase().trim(),
+        email: cleanEmail,
         passwordHash,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         departmentId: departmentId || null,
+        status: "ACTIVE",
         roles: {
           create: {
             roleId: roleRecord.id,
+          },
+        },
+        leaveBalance: {
+          create: {
+            casual: 12,
+            sick: 10,
+            annual: 15,
+            emergency: 5,
           },
         },
       },
@@ -140,21 +163,27 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({
-      id: newUser.id,
-      email: newUser.email,
-      firstName: newUser.firstName,
-      lastName: newUser.lastName,
-      name: `${newUser.firstName} ${newUser.lastName}`,
-      status: newUser.status,
-      department: newUser.department?.name || "Unassigned",
-      role: targetRoleName,
-      createdAt: newUser.createdAt.toISOString(),
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        id: newUser.id,
+        email: newUser.email,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        name: `${newUser.firstName} ${newUser.lastName}`,
+        avatar: newUser.avatar,
+        status: newUser.status,
+        department: newUser.department?.name || "Unassigned",
+        departmentId: newUser.departmentId,
+        role: targetRoleName,
+        roles: [targetRoleName],
+        createdAt: newUser.createdAt.toISOString(),
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Error creating user:", error);
     return NextResponse.json(
-      { error: "Failed to create user" },
+      { error: "Failed to provision user" },
       { status: 500 }
     );
   }
@@ -210,15 +239,66 @@ export async function PATCH(request: Request) {
         action: "USER_UPDATED",
         resource: "user",
         resourceId: id,
-        metadata: { status, roleName },
+        metadata: { status, roleName, departmentId },
       },
     });
 
-    return NextResponse.json(updatedUser);
+    return NextResponse.json({ success: true, user: updatedUser });
   } catch (error) {
     console.error("Error updating user:", error);
     return NextResponse.json(
-      { error: "Failed to update user" },
+      { error: "Failed to update user account" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  const { session, errorResponse } = await getAuthSession();
+  if (errorResponse) return errorResponse;
+
+  const permErr = requirePermission(
+    session?.user.permissions,
+    "SUSPEND_USER"
+  );
+  if (permErr) return permErr;
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "User ID parameter is required" },
+        { status: 400 }
+      );
+    }
+
+    if (id === session?.user.id) {
+      return NextResponse.json(
+        { error: "You cannot delete your own active administrator account" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.user.delete({
+      where: { id },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorId: session!.user.id,
+        action: "USER_DELETED",
+        resource: "user",
+        resourceId: id,
+      },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting user:", error);
+    return NextResponse.json(
+      { error: "Failed to delete user account" },
       { status: 500 }
     );
   }
