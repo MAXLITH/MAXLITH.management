@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Megaphone,
   Pin,
@@ -8,61 +8,98 @@ import {
   Search,
   Calendar,
   User,
-  Tag,
-  AlertTriangle,
-  Info,
-  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/loading-skeleton";
 
-const mockAnnouncements = [
-  {
-    id: "ann-1",
-    title: "MAXLITH Q4 Engineering & Alpha Trading Targets Released",
-    category: "EXECUTIVE",
-    priority: "URGENT",
-    isPinned: true,
-    author: "Varun Sharma",
-    date: "2026-09-22",
-    content: "We are excited to unveil our Q4 Roadmap focusing on ultra-low latency execution on Rust core engine, hardware FPGA orderbook integration, and unified team management portal launch.",
-  },
-  {
-    id: "ann-2",
-    title: "Scheduled Maintenance: Core Risk Server Upgrades",
-    category: "INFRASTRUCTURE",
-    priority: "HIGH",
-    isPinned: fontBoolean(true),
-    author: "Sarah Jenkins",
-    date: "2026-09-20",
-    content: "System maintenance is scheduled for Sunday at 02:00 UTC. Secondary backup clusters will handle live trading feeds without interruption.",
-  },
-  {
-    id: "ann-3",
-    title: "Annual Health Insurance & Benefits Enrollment Open",
-    category: "HR",
-    priority: "MEDIUM",
-    isPinned: false,
-    author: "Elena Rostova",
-    date: "2026-09-15",
-    content: "Please review and submit your updated health benefit preferences before October 15th via the portal.",
-  },
-];
-
-function fontBoolean(val: boolean) {
-  return val;
+interface AnnouncementItem {
+  id: string;
+  title: string;
+  content: string;
+  priority: string;
+  isPinned: boolean;
+  authorName: string;
+  authorAvatar: string | null;
+  createdAt: string;
 }
 
 export default function AnnouncementsPage() {
+  const [announcements, setAnnouncements] = useState<AnnouncementItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
   const [showPublishModal, setShowPublishModal] = useState(false);
 
-  const filteredAnnouncements = mockAnnouncements.filter((a) => {
+  // New announcement form state
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [newPriority, setNewPriority] = useState("NORMAL");
+  const [newIsPinned, setNewIsPinned] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
+
+  const fetchAnnouncements = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch("/api/announcements");
+      if (res.ok) {
+        const data = await res.json();
+        setAnnouncements(data);
+      }
+    } catch (err) {
+      console.error("Failed to load announcements", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, []);
+
+  const handlePublish = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim() || !newContent.trim()) return;
+
+    try {
+      setPublishing(true);
+      setPublishError("");
+      const res = await fetch("/api/announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTitle.trim(),
+          content: newContent.trim(),
+          priority: newPriority,
+          isPinned: newIsPinned,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to publish announcement");
+      }
+
+      setNewTitle("");
+      setNewContent("");
+      setNewIsPinned(false);
+      setShowPublishModal(false);
+      fetchAnnouncements();
+    } catch (err: any) {
+      setPublishError(err.message || "Failed to publish announcement");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const filteredAnnouncements = announcements.filter((a) => {
     const matchesSearch =
       a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.content.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCat = categoryFilter === "ALL" || a.category === categoryFilter;
-    return matchesSearch && matchesCat;
+    const matchesPriority = priorityFilter === "ALL" || a.priority === priorityFilter;
+    return matchesSearch && matchesPriority;
   });
 
   return (
@@ -103,112 +140,183 @@ export default function AnnouncementsPage() {
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
           <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            value={priorityFilter}
+            onChange={(e) => setPriorityFilter(e.target.value)}
             className="px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] w-full sm:w-auto"
           >
-            <option value="ALL">All Categories</option>
-            <option value="EXECUTIVE">Executive</option>
-            <option value="INFRASTRUCTURE">Infrastructure</option>
-            <option value="HR">HR & Culture</option>
+            <option value="ALL">All Priorities</option>
+            <option value="URGENT">Urgent</option>
+            <option value="HIGH">High</option>
+            <option value="NORMAL">Normal</option>
+            <option value="LOW">Low</option>
           </select>
         </div>
       </div>
 
       {/* Announcements Stream */}
-      <div className="space-y-4">
-        {filteredAnnouncements.map((ann) => (
-          <div
-            key={ann.id}
-            className={cn(
-              "rounded-xl border p-6 space-y-3 bg-[var(--bg-secondary)] transition-all shadow-sm relative overflow-hidden",
-              ann.isPinned ? "border-[var(--accent)]/60 bg-gradient-to-r from-[var(--accent-muted)]/10 to-[var(--bg-secondary)]" : "border-[var(--border)]"
-            )}
-          >
-            {ann.isPinned && (
-              <div className="flex items-center gap-1 text-[11px] font-bold text-[var(--accent-hover)] uppercase tracking-wider mb-1">
-                <Pin size={12} className="rotate-45" />
-                <span>Pinned Announcement</span>
-              </div>
-            )}
+      {loading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+        </div>
+      ) : filteredAnnouncements.length === 0 ? (
+        <EmptyState
+          icon={Megaphone}
+          title="No Announcements Found"
+          description={
+            searchTerm || priorityFilter !== "ALL"
+              ? "No announcements match your search term or priority filter."
+              : "No company announcements have been published yet."
+          }
+          actionLabel="Publish Notice"
+          onAction={() => setShowPublishModal(true)}
+        />
+      ) : (
+        <div className="space-y-4">
+          {filteredAnnouncements.map((ann) => (
+            <div
+              key={ann.id}
+              className={cn(
+                "rounded-xl border p-6 space-y-3 bg-[var(--bg-secondary)] transition-all shadow-sm relative overflow-hidden",
+                ann.isPinned ? "border-[var(--accent)]/60 bg-gradient-to-r from-[var(--accent-muted)]/10 to-[var(--bg-secondary)]" : "border-[var(--border)]"
+              )}
+            >
+              {ann.isPinned && (
+                <div className="flex items-center gap-1 text-[11px] font-bold text-[var(--accent-hover)] uppercase tracking-wider mb-1">
+                  <Pin size={12} className="rotate-45" />
+                  <span>Pinned Announcement</span>
+                </div>
+              )}
 
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <h2 className="text-lg font-bold text-[var(--text-primary)]">{ann.title}</h2>
-              <span
-                className={cn(
-                  "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 w-fit",
-                  ann.priority === "URGENT" && "bg-[var(--danger-muted)] text-[var(--danger)]",
-                  ann.priority === "HIGH" && "bg-[var(--warning-muted)] text-[var(--warning)]",
-                  ann.priority === "MEDIUM" && "bg-[var(--accent-muted)] text-[var(--accent-hover)]"
-                )}
-              >
-                {ann.category}
-              </span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">{ann.title}</h2>
+                <span
+                  className={cn(
+                    "px-2.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 w-fit",
+                    ann.priority === "URGENT" && "bg-[var(--danger-muted)] text-[var(--danger)]",
+                    ann.priority === "HIGH" && "bg-[var(--warning-muted)] text-[var(--warning)]",
+                    ann.priority === "NORMAL" && "bg-[var(--accent-muted)] text-[var(--accent-hover)]",
+                    ann.priority === "LOW" && "bg-[var(--bg-card)] text-[var(--text-muted)]"
+                  )}
+                >
+                  {ann.priority}
+                </span>
+              </div>
+
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
+                {ann.content}
+              </p>
+
+              <div className="flex items-center justify-between pt-3 border-t border-[var(--border)] text-xs text-[var(--text-muted)]">
+                <div className="flex items-center gap-2">
+                  <User size={14} className="text-[var(--accent)]" />
+                  <span>Published by {ann.authorName}</span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono">
+                  <Calendar size={14} />
+                  <span>{new Date(ann.createdAt).toLocaleDateString()}</span>
+                </div>
+              </div>
             </div>
-
-            <p className="text-xs text-[var(--text-secondary)] leading-relaxed">{ann.content}</p>
-
-            <div className="flex items-center justify-between pt-3 border-t border-[var(--border)] text-xs text-[var(--text-muted)]">
-              <div className="flex items-center gap-2">
-                <User size={14} className="text-[var(--accent)]" />
-                <span>Published by {ann.author}</span>
-              </div>
-              <div className="flex items-center gap-1.5 font-mono">
-                <Calendar size={14} />
-                <span>{ann.date}</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Publish Modal */}
       {showPublishModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] w-full max-w-lg p-6 space-y-4 shadow-2xl">
+          <form
+            onSubmit={handlePublish}
+            className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] w-full max-w-lg p-6 space-y-4 shadow-2xl"
+          >
             <h2 className="text-lg font-bold text-[var(--text-primary)] border-b border-[var(--border)] pb-3">
               Publish Company Announcement
             </h2>
+
+            {publishError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-center gap-2">
+                <AlertCircle size={14} />
+                <span>{publishError}</span>
+              </div>
+            )}
+
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-medium text-[var(--text-secondary)] mb-1">Title</label>
-                <input type="text" placeholder="Notice title..." className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]" />
+                <label className="block font-medium text-[var(--text-secondary)] mb-1">
+                  Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Notice title..."
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Category</label>
-                  <select className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]">
-                    <option>EXECUTIVE</option>
-                    <option>INFRASTRUCTURE</option>
-                    <option>HR</option>
+                  <label className="block font-medium text-[var(--text-secondary)] mb-1">
+                    Priority
+                  </label>
+                  <select
+                    value={newPriority}
+                    onChange={(e) => setNewPriority(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="NORMAL">Normal</option>
+                    <option value="HIGH">High</option>
+                    <option value="URGENT">Urgent</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block font-medium text-[var(--text-secondary)] mb-1">Priority</label>
-                  <select className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]">
-                    <option>URGENT</option>
-                    <option>HIGH</option>
-                    <option>MEDIUM</option>
-                  </select>
+
+                <div className="flex items-center pt-5">
+                  <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={newIsPinned}
+                      onChange={(e) => setNewIsPinned(e.target.checked)}
+                      className="rounded bg-[var(--bg-card)] border-[var(--border)] text-[var(--accent)]"
+                    />
+                    <span>Pin to top</span>
+                  </label>
                 </div>
               </div>
 
               <div>
-                <label className="block font-medium text-[var(--text-secondary)] mb-1">Announcement Body</label>
-                <textarea rows={4} placeholder="Full content..." className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]" />
+                <label className="block font-medium text-[var(--text-secondary)] mb-1">
+                  Announcement Body *
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Full announcement content..."
+                  value={newContent}
+                  onChange={(e) => setNewContent(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]"
+                />
               </div>
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-              <button onClick={() => setShowPublishModal(false)} className="px-4 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+              <button
+                type="button"
+                onClick={() => setShowPublishModal(false)}
+                className="px-4 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
                 Cancel
               </button>
-              <button onClick={() => setShowPublishModal(false)} className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-semibold">
-                Publish
+              <button
+                type="submit"
+                disabled={publishing}
+                className="px-4 py-2 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {publishing ? "Publishing..." : "Publish"}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
     </div>

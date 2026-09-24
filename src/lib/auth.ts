@@ -1,5 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
+import GitHub from "next-auth/providers/github";
 import { compare } from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { getPermissionsForRoles } from "@/lib/rbac";
@@ -9,6 +11,22 @@ import { authConfig } from "./auth.config";
 export const { handlers, signIn, signOut, auth } = NextAuth({
   ...authConfig,
   providers: [
+    Google({
+      clientId:
+        process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID || "",
+      clientSecret:
+        process.env.AUTH_GOOGLE_SECRET ||
+        process.env.GOOGLE_CLIENT_SECRET ||
+        "",
+    }),
+    GitHub({
+      clientId:
+        process.env.AUTH_GITHUB_ID || process.env.GITHUB_CLIENT_ID || "",
+      clientSecret:
+        process.env.AUTH_GITHUB_SECRET ||
+        process.env.GITHUB_CLIENT_SECRET ||
+        "",
+    }),
     Credentials({
       name: "credentials",
       credentials: {
@@ -20,7 +38,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
-        const email = credentials.email as string;
+        const email = (credentials.email as string).trim().toLowerCase();
         const password = credentials.password as string;
 
         try {
@@ -54,10 +72,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             return null;
           }
 
-          const roleNames = user.roles.map((ur: any) => ur.role.name as RoleName);
+          const roleNames = user.roles.map(
+            (ur: any) => ur.role.name as RoleName
+          );
           const permissions = getPermissionsForRoles(roleNames);
 
-          // Log login to audit
           try {
             await prisma.auditLog.create({
               data: {
@@ -88,4 +107,93 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt({ token, user, account }) {
+      // Execute base jwt callback safely
+      if (authConfig.callbacks?.jwt) {
+        const baseToken = await authConfig.callbacks.jwt({ token, user, account } as any);
+        if (baseToken) {
+          token = baseToken;
+        }
+      }
+
+      // Handle OAuth sign-in user resolution from Prisma database
+      if (user && account && (account.provider === "google" || account.provider === "github")) {
+        try {
+          const email = user.email?.toLowerCase().trim();
+          if (email) {
+            let dbUser = await prisma.user.findUnique({
+              where: { email },
+              include: {
+                roles: {
+                  include: {
+                    role: {
+                      include: {
+                        permissions: true,
+                      },
+                    },
+                  },
+                },
+              },
+            });
+
+            // If OAuth user does not exist in DB, create user with DEVELOPER role
+            if (!dbUser) {
+              const nameParts = (user.name || "").trim().split(" ");
+              const firstName = nameParts[0] || "User";
+              const lastName = nameParts.slice(1).join(" ") || "";
+              const devRole = await prisma.role.findUnique({ where: { name: "DEVELOPER" } });
+
+              dbUser = await prisma.user.create({
+                data: {
+                  email,
+                  firstName,
+                  lastName,
+                  avatar: user.image,
+                  status: "ACTIVE",
+                  roles: devRole
+                    ? { create: { roleId: devRole.id } }
+                    : undefined,
+                },
+                include: {
+                  roles: {
+                    include: {
+                      role: {
+                        include: {
+                          permissions: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+            }
+
+            const roleNames = dbUser.roles.map(
+              (ur: any) => ur.role.name as RoleName
+            );
+            const roles = roleNames.length > 0 ? roleNames : (["DEVELOPER"] as RoleName[]);
+            const permissions = getPermissionsForRoles(roles);
+
+            token.id = dbUser.id;
+            token.firstName = dbUser.firstName;
+            token.lastName = dbUser.lastName;
+            token.avatar = dbUser.avatar || user.image || null;
+            token.roles = roles;
+            token.permissions = permissions;
+          }
+        } catch (dbError) {
+          console.error("Error linking OAuth user to database:", dbError);
+          // Fallback to default roles if DB fails
+          if (!token.roles || (token.roles as string[]).length === 0) {
+            token.roles = ["DEVELOPER"];
+            token.permissions = getPermissionsForRoles(["DEVELOPER"]);
+          }
+        }
+      }
+
+      return token;
+    },
+  },
 });

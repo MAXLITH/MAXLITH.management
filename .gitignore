@@ -42,6 +42,8 @@ scratch_*
 skills-lock.json
 
 # local databases
+prisma/pgdata/
+prisma/pglite_db/
 prisma/pglite_data/
 prisma/*.db
 *.db

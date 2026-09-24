@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   CheckSquare,
   Plus,
@@ -8,96 +8,140 @@ import {
   Filter,
   Kanban,
   List,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  Calendar,
   User,
-  MoreVertical,
+  Calendar,
   Flag,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton, CardSkeleton } from "@/components/ui/loading-skeleton";
 
-const initialTasks = [
-  {
-    id: "task-1",
-    title: "Optimize SIMD vector intrinsics for orderbook matching",
-    project: "MAXLITH High-Frequency Alpha v4",
-    assignee: "Varun Sharma",
-    priority: "URGENT",
-    status: "IN_PROGRESS",
-    dueDate: "2026-09-25",
-    tags: ["Rust", "AVX-512", "Trading Engine"],
-  },
-  {
-    id: "task-2",
-    title: "Implement unified NextAuth v5 session middleware",
-    project: "Internal Management Portal",
-    assignee: "Varun Sharma",
-    priority: "HIGH",
-    status: "COMPLETED",
-    dueDate: "2026-09-22",
-    tags: ["Next.js", "Auth", "Security"],
-  },
-  {
-    id: "task-3",
-    title: "Calibrate Portfolio VaR (Value-at-Risk) Monte Carlo simulations",
-    project: "Quant Risk Analytics Engine",
-    assignee: "Elena Rostova",
-    priority: "MEDIUM",
-    status: "TODO",
-    dueDate: "2026-09-29",
-    tags: ["Python", "Quant", "Monte Carlo"],
-  },
-  {
-    id: "task-4",
-    title: "Configure NASDAQ ITCH binary parser FPGA bitstream",
-    project: "Market Data Feed Handler (FPGA)",
-    assignee: "David Chen",
-    priority: "URGENT",
-    status: "IN_PROGRESS",
-    dueDate: "2026-10-02",
-    tags: ["Verilog", "FPGA", "Hardware"],
-  },
-  {
-    id: "task-5",
-    title: "Draft Q3 Financial & Engineering Operations Report",
-    project: "Internal Management Portal",
-    assignee: "Sarah Jenkins",
-    priority: "MEDIUM",
-    status: "IN_REVIEW",
-    dueDate: "2026-09-30",
-    tags: ["Operations", "Reporting"],
-  },
-];
+interface TaskItem {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  projectId: string | null;
+  projectName: string | null;
+  assignee: { id: string; name: string; avatar: string | null } | null;
+  creatorName: string;
+  deadline: string | null;
+  tags: string[];
+}
 
 export default function TasksPage() {
-  const [tasks, setTasks] = useState(initialTasks);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [priorityFilter, setPriorityFilter] = useState("ALL");
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // New task form state
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDesc, setNewTaskDesc] = useState("");
+  const [newTaskPriority, setNewTaskPriority] = useState("MEDIUM");
+  const [newTaskProject, setNewTaskProject] = useState("");
+  const [newTaskTags, setNewTaskTags] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  const fetchTasks = async () => {
+    try {
+      setLoading(true);
+      const [tasksRes, projectsRes] = await Promise.all([
+        fetch("/api/tasks"),
+        fetch("/api/projects"),
+      ]);
+
+      if (tasksRes.ok) {
+        const data = await tasksRes.json();
+        setTasks(data);
+      }
+      if (projectsRes.ok) {
+        const pData = await projectsRes.json();
+        setProjects(pData);
+      }
+    } catch (err) {
+      console.error("Failed to load tasks", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim()) return;
+
+    try {
+      setCreating(true);
+      setCreateError("");
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTaskTitle.trim(),
+          description: newTaskDesc.trim(),
+          priority: newTaskPriority,
+          projectId: newTaskProject || null,
+          tags: newTaskTags
+            ? newTaskTags.split(",").map((t) => t.trim()).filter(Boolean)
+            : [],
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to create task");
+      }
+
+      setNewTaskTitle("");
+      setNewTaskDesc("");
+      setNewTaskTags("");
+      setShowCreateModal(false);
+      fetchTasks();
+    } catch (err: any) {
+      setCreateError(err.message || "Failed to create task");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const updateTaskStatus = async (id: string, newStatus: string) => {
+    // Optimistic UI update
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: newStatus } : t))
+    );
+
+    try {
+      await fetch("/api/tasks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status: newStatus }),
+      });
+    } catch (err) {
+      console.error("Failed to update task status", err);
+      fetchTasks();
+    }
+  };
+
   const filteredTasks = tasks.filter((t) => {
     const matchesSearch =
       t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.project.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.assignee.toLowerCase().includes(searchTerm.toLowerCase());
+      (t.projectName && t.projectName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (t.assignee && t.assignee.name.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesStatus = statusFilter === "ALL" || t.status === statusFilter;
     const matchesPriority = priorityFilter === "ALL" || t.priority === priorityFilter;
     return matchesSearch && matchesStatus && matchesPriority;
   });
-
-  const toggleTaskStatus = (id: string) => {
-    setTasks(
-      tasks.map((t) =>
-        t.id === id
-          ? { ...t, status: t.status === "COMPLETED" ? "IN_PROGRESS" : "COMPLETED" }
-          : t
-      )
-    );
-  };
 
   const columns = [
     { id: "TODO", title: "To Do", color: "border-t-[var(--text-muted)]" },
@@ -196,8 +240,23 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Kanban Board View */}
-      {viewMode === "kanban" ? (
+      {/* Main Content View */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      ) : tasks.length === 0 ? (
+        <EmptyState
+          icon={CheckSquare}
+          title="No Tasks Found"
+          description="There are no tasks in the database yet. Click 'Create Task' to add a new task."
+          actionLabel="Create Task"
+          onAction={() => setShowCreateModal(true)}
+        />
+      ) : viewMode === "kanban" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {columns.map((col) => {
             const colTasks = filteredTasks.filter((t) => t.status === col.id);
@@ -220,15 +279,17 @@ export default function TasksPage() {
                   {colTasks.map((task) => (
                     <div
                       key={task.id}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3.5 space-y-3 shadow-sm hover:border-[var(--accent)]/50 transition-all cursor-pointer group"
+                      className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-3.5 space-y-3 shadow-sm hover:border-[var(--accent)]/50 transition-all group"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="text-[10px] font-semibold text-[var(--accent-hover)] bg-[var(--accent-muted)] px-2 py-0.5 rounded truncate">
-                          {task.project}
-                        </span>
+                        {task.projectName && (
+                          <span className="text-[10px] font-semibold text-[var(--accent-hover)] bg-[var(--accent-muted)] px-2 py-0.5 rounded truncate">
+                            {task.projectName}
+                          </span>
+                        )}
                         <span
                           className={cn(
-                            "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0",
+                            "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0 ml-auto",
                             task.priority === "URGENT" && "bg-[var(--danger-muted)] text-[var(--danger)]",
                             task.priority === "HIGH" && "bg-[var(--warning-muted)] text-[var(--warning)]",
                             task.priority === "MEDIUM" && "bg-[var(--accent-muted)] text-[var(--accent-hover)]",
@@ -243,23 +304,27 @@ export default function TasksPage() {
                         {task.title}
                       </h4>
 
-                      <div className="flex flex-wrap gap-1">
-                        {task.tags.map((tag) => (
-                          <span key={tag} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] border border-[var(--border)] text-[var(--text-muted)]">
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
+                      {task.tags && task.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {task.tags.map((tag) => (
+                            <span key={tag} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] border border-[var(--border)] text-[var(--text-muted)]">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between pt-2 border-t border-[var(--border)] text-[11px] text-[var(--text-muted)]">
                         <div className="flex items-center gap-1.5">
                           <User size={12} className="text-[var(--accent)]" />
-                          <span>{task.assignee}</span>
+                          <span>{task.assignee ? task.assignee.name : "Unassigned"}</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Calendar size={12} />
-                          <span>{task.dueDate}</span>
-                        </div>
+                        {task.deadline && (
+                          <div className="flex items-center gap-1">
+                            <Calendar size={12} />
+                            <span>{new Date(task.deadline).toLocaleDateString()}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -285,7 +350,6 @@ export default function TasksPage() {
                 <th className="px-4 py-3">Assignee</th>
                 <th className="px-4 py-3">Priority</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Due Date</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
@@ -293,20 +357,14 @@ export default function TasksPage() {
               {filteredTasks.map((t) => (
                 <tr key={t.id} className="hover:bg-[var(--bg-card-hover)] transition-colors">
                   <td className="px-4 py-3.5 font-medium text-[var(--text-primary)]">
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => toggleTaskStatus(t.id)}>
-                        <CheckSquare
-                          size={16}
-                          className={t.status === "COMPLETED" ? "text-[var(--success)]" : "text-[var(--text-muted)] hover:text-[var(--accent)]"}
-                        />
-                      </button>
-                      <span className={cn(t.status === "COMPLETED" && "line-through text-[var(--text-muted)]")}>
-                        {t.title}
-                      </span>
-                    </div>
+                    <span className={cn(t.status === "COMPLETED" && "line-through text-[var(--text-muted)]")}>
+                      {t.title}
+                    </span>
                   </td>
-                  <td className="px-4 py-3.5 text-[var(--accent-hover)] font-medium">{t.project}</td>
-                  <td className="px-4 py-3.5">{t.assignee}</td>
+                  <td className="px-4 py-3.5 text-[var(--accent-hover)] font-medium">
+                    {t.projectName || "General"}
+                  </td>
+                  <td className="px-4 py-3.5">{t.assignee ? t.assignee.name : "Unassigned"}</td>
                   <td className="px-4 py-3.5">
                     <span
                       className={cn(
@@ -320,11 +378,29 @@ export default function TasksPage() {
                       {t.priority}
                     </span>
                   </td>
-                  <td className="px-4 py-3.5 font-semibold">{t.status.replace("_", " ")}</td>
-                  <td className="px-4 py-3.5 text-[var(--text-muted)]">{t.dueDate}</td>
+                  <td className="px-4 py-3.5 font-semibold">
+                    <select
+                      value={t.status}
+                      onChange={(e) => updateTaskStatus(t.id, e.target.value)}
+                      className="bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 text-xs text-[var(--text-primary)]"
+                    >
+                      <option value="TODO">To Do</option>
+                      <option value="IN_PROGRESS">In Progress</option>
+                      <option value="IN_REVIEW">In Review</option>
+                      <option value="COMPLETED">Completed</option>
+                    </select>
+                  </td>
                   <td className="px-4 py-3.5 text-right">
-                    <button onClick={() => toggleTaskStatus(t.id)} className="text-[var(--accent)] hover:underline font-medium">
-                      Toggle State
+                    <button
+                      onClick={() =>
+                        updateTaskStatus(
+                          t.id,
+                          t.status === "COMPLETED" ? "IN_PROGRESS" : "COMPLETED"
+                        )
+                      }
+                      className="text-[var(--accent)] hover:underline font-medium"
+                    >
+                      {t.status === "COMPLETED" ? "Reopen" : "Mark Done"}
                     </button>
                   </td>
                 </tr>
@@ -337,44 +413,116 @@ export default function TasksPage() {
       {/* Task Creation Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] w-full max-w-lg p-6 space-y-4 shadow-2xl">
+          <form
+            onSubmit={handleCreateTask}
+            className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] w-full max-w-lg p-6 space-y-4 shadow-2xl"
+          >
             <h2 className="text-lg font-bold text-[var(--text-primary)] border-b border-[var(--border)] pb-3">
               Create New Task
             </h2>
+
+            {createError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400 flex items-center gap-2">
+                <AlertCircle size={14} />
+                <span>{createError}</span>
+              </div>
+            )}
+
             <div className="space-y-3">
               <div>
-                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Task Title</label>
-                <input type="text" placeholder="e.g. Implement FPGA DMA queue buffer" className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]" />
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                  Task Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Implement order routing API"
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                />
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Project</label>
-                  <select className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]">
-                    <option>MAXLITH High-Frequency Alpha v4</option>
-                    <option>Internal Management Portal</option>
-                    <option>Quant Risk Analytics Engine</option>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                    Project
+                  </label>
+                  <select
+                    value={newTaskProject}
+                    onChange={(e) => setNewTaskProject(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]"
+                  >
+                    <option value="">General / None</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Priority</label>
-                  <select className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]">
-                    <option value="URGENT">Urgent</option>
-                    <option value="HIGH">High</option>
-                    <option value="MEDIUM">Medium</option>
+                  <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                    Priority
+                  </label>
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]"
+                  >
                     <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="URGENT">Urgent</option>
                   </select>
                 </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                  Tags (comma separated)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. API, Auth, Next.js"
+                  value={newTaskTags}
+                  onChange={(e) => setNewTaskTags(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Task specifications..."
+                  value={newTaskDesc}
+                  onChange={(e) => setNewTaskDesc(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)]"
+                />
+              </div>
             </div>
+
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
                 Cancel
               </button>
-              <button onClick={() => setShowCreateModal(false)} className="px-4 py-2 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm font-semibold">
-                Save Task
+              <button
+                type="submit"
+                disabled={creating}
+                className="px-4 py-2 rounded-lg bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm font-semibold disabled:opacity-50"
+              >
+                {creating ? "Creating..." : "Save Task"}
               </button>
             </div>
-          </div>
+          </form>
         </div>
       )}
     </div>

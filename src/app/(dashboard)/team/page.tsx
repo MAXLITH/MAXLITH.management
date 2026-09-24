@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -8,94 +8,59 @@ import {
   Filter,
   Mail,
   Building2,
-  Shield,
-  Phone,
   CheckCircle2,
   Briefcase,
-  UserPlus,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/ui/empty-state";
+import { CardSkeleton } from "@/components/ui/loading-skeleton";
 
-const mockEmployees = [
-  {
-    id: "usr-1",
-    firstName: "Varun",
-    lastName: "Sharma",
-    email: "varun@maxlith.com",
-    title: "Founder & Lead Architect",
-    department: "AI & Quantitative Research",
-    role: "SUPER_ADMIN",
-    status: "ACTIVE",
-    initials: "VS",
-    phone: "+1 (555) 234-5678",
-    projectsCount: 4,
-  },
-  {
-    id: "usr-2",
-    firstName: "David",
-    lastName: "Chen",
-    email: "david@maxlith.com",
-    title: "Senior FPGA / C++ Hardware Engineer",
-    department: "Hardware Acceleration",
-    role: "ENGINEERING_LEAD",
-    status: "ACTIVE",
-    initials: "DC",
-    phone: "+1 (555) 345-6789",
-    projectsCount: 2,
-  },
-  {
-    id: "usr-3",
-    firstName: "Elena",
-    lastName: "Rostova",
-    email: "elena@maxlith.com",
-    title: "Lead Quantitative Researcher",
-    department: "AI & Quantitative Research",
-    role: "SENIOR_QUANT",
-    status: "ACTIVE",
-    initials: "ER",
-    phone: "+1 (555) 456-7890",
-    projectsCount: 3,
-  },
-  {
-    id: "usr-4",
-    firstName: "Sarah",
-    lastName: "Jenkins",
-    email: "sarah@maxlith.com",
-    title: "Head of Infrastructure & Security",
-    department: "DevOps & Infrastructure",
-    role: "DEVOPS_LEAD",
-    status: "ACTIVE",
-    initials: "SJ",
-    phone: "+1 (555) 567-8901",
-    projectsCount: 3,
-  },
-  {
-    id: "usr-5",
-    firstName: "Marcus",
-    lastName: "Vance",
-    email: "marcus@maxlith.com",
-    title: "Compliance & Regulatory Specialist",
-    department: "Compliance & Legal",
-    role: "COMPLIANCE_OFFICER",
-    status: "ACTIVE",
-    initials: "MV",
-    phone: "+1 (555) 678-9012",
-    projectsCount: 1,
-  },
-];
+interface TeamMember {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  avatar: string | null;
+  status: string;
+  department: string;
+  roles: string[];
+  taskCount: number;
+  projectCount: number;
+}
 
 export default function TeamPage() {
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [deptFilter, setDeptFilter] = useState("ALL");
 
-  const filteredEmployees = mockEmployees.filter((e) => {
+  useEffect(() => {
+    async function loadTeam() {
+      try {
+        setLoading(true);
+        const res = await fetch("/api/team");
+        if (res.ok) {
+          const data = await res.json();
+          setMembers(data);
+        }
+      } catch (err) {
+        console.error("Failed to load team members", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadTeam();
+  }, []);
+
+  const filteredMembers = members.filter((m) => {
     const matchesSearch =
-      `${e.firstName} ${e.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDept = deptFilter === "ALL" || e.department === deptFilter;
+      m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      m.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesDept = deptFilter === "ALL" || m.department === deptFilter;
     return matchesSearch && matchesDept;
   });
+
+  const departments = Array.from(new Set(members.map((m) => m.department)));
 
   return (
     <div className="space-y-6">
@@ -110,14 +75,6 @@ export default function TeamPage() {
             Connect with engineers, quantitative researchers, and operations colleagues across the company.
           </p>
         </div>
-
-        <Link
-          href="/team/departments"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border)] text-[var(--text-primary)] hover:border-[var(--accent)] text-sm font-semibold transition-all shadow-sm shrink-0"
-        >
-          <Building2 size={18} className="text-[var(--accent)]" />
-          <span>View Departments</span>
-        </Link>
       </div>
 
       {/* Filter Bar */}
@@ -126,7 +83,7 @@ export default function TeamPage() {
           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
-            placeholder="Search team members by name or role..."
+            placeholder="Search team members..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-4 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
@@ -141,68 +98,91 @@ export default function TeamPage() {
             className="px-3 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-xs font-medium text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] w-full sm:w-auto"
           >
             <option value="ALL">All Departments</option>
-            <option value="AI & Quantitative Research">AI & Quant Research</option>
-            <option value="Hardware Acceleration">Hardware Acceleration</option>
-            <option value="DevOps & Infrastructure">DevOps & Infra</option>
-            <option value="Compliance & Legal">Compliance & Legal</option>
+            {departments.map((dept) => (
+              <option key={dept} value={dept}>
+                {dept}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
       {/* Employee Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredEmployees.map((emp) => (
-          <div
-            key={emp.id}
-            className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-6 space-y-4 hover:border-[var(--accent)]/50 transition-all shadow-sm flex flex-col justify-between group"
-          >
-            <div className="space-y-3">
-              <div className="flex items-start gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xl font-bold shrink-0 shadow-md">
-                  {emp.initials}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-bold text-[var(--text-primary)] truncate group-hover:text-[var(--accent-hover)] transition-colors">
-                    {emp.firstName} {emp.lastName}
-                  </h3>
-                  <p className="text-xs text-[var(--text-secondary)] font-medium truncate">{emp.title}</p>
-                  <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--accent-muted)] text-[var(--accent-hover)] uppercase">
-                    {emp.role.replace(/_/g, " ")}
-                  </span>
-                </div>
-              </div>
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <CardSkeleton />
+          <CardSkeleton />
+          <CardSkeleton />
+        </div>
+      ) : filteredMembers.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No Team Members Found"
+          description={
+            searchTerm || deptFilter !== "ALL"
+              ? "No team members match your current filter criteria."
+              : "No team members are currently listed in the directory."
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredMembers.map((emp) => {
+            const initials = `${emp.firstName?.[0] || ""}${emp.lastName?.[0] || ""}`.toUpperCase() || "U";
+            const roleName = emp.roles[0] || "EMPLOYEE";
 
-              <div className="pt-2 border-t border-[var(--border)] space-y-2 text-xs text-[var(--text-muted)]">
-                <div className="flex items-center gap-2">
-                  <Building2 size={14} className="text-[var(--accent)] shrink-0" />
-                  <span className="truncate">{emp.department}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Mail size={14} className="text-[var(--accent)] shrink-0" />
-                  <span className="truncate">{emp.email}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Briefcase size={14} className="text-[var(--accent)] shrink-0" />
-                  <span>{emp.projectsCount} Active Projects</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs">
-              <span className="text-[var(--success)] font-semibold flex items-center gap-1">
-                <CheckCircle2 size={12} />
-                <span>Active</span>
-              </span>
-              <a
-                href={`mailto:${emp.email}`}
-                className="text-[var(--accent)] hover:underline font-semibold text-xs"
+            return (
+              <div
+                key={emp.id}
+                className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-6 space-y-4 hover:border-[var(--accent)]/50 transition-all shadow-sm flex flex-col justify-between group"
               >
-                Send Message
-              </a>
-            </div>
-          </div>
-        ))}
-      </div>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-purple)] flex items-center justify-center text-white text-xl font-bold shrink-0 shadow-md">
+                      {initials}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-base font-bold text-[var(--text-primary)] truncate group-hover:text-[var(--accent-hover)] transition-colors">
+                        {emp.name}
+                      </h3>
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--accent-muted)] text-[var(--accent-hover)] uppercase">
+                        {roleName.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-[var(--border)] space-y-2 text-xs text-[var(--text-muted)]">
+                    <div className="flex items-center gap-2">
+                      <Building2 size={14} className="text-[var(--accent)] shrink-0" />
+                      <span className="truncate">{emp.department}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Mail size={14} className="text-[var(--accent)] shrink-0" />
+                      <span className="truncate">{emp.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Briefcase size={14} className="text-[var(--accent)] shrink-0" />
+                      <span>{emp.projectCount} Projects &bull; {emp.taskCount} Tasks</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs">
+                  <span className="text-[var(--success)] font-semibold flex items-center gap-1">
+                    <CheckCircle2 size={12} />
+                    <span>{emp.status}</span>
+                  </span>
+                  <a
+                    href={`mailto:${emp.email}`}
+                    className="text-[var(--accent)] hover:underline font-semibold text-xs"
+                  >
+                    Send Email
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

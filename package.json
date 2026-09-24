@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "pglite-server -d ./prisma/pglite_db -p 5432 -m 100 -r \"next dev\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
