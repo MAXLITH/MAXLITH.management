@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
@@ -51,6 +51,46 @@ function SignUpForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOAuthLoading, setIsOAuthLoading] = useState<string | null>(null);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    // Check existing session on mount (handles refresh & logged-in users)
+    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
+      if (sessionError) {
+        console.error("Error getting session:", sessionError.message);
+        return;
+      }
+      if (session && isMounted) {
+        router.push("/dashboard");
+        router.refresh();
+      }
+    });
+
+    // Listen for auth state changes (handles OAuth redirect callback)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session && isMounted) {
+        router.push("/dashboard");
+        router.refresh();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [router]);
+
+  const getRedirectUrl = () => {
+    if (typeof window !== "undefined") {
+      return `${window.location.origin}/login`;
+    }
+    return process.env.NEXT_PUBLIC_APP_URL
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/login`
+      : "http://localhost:3000/login";
+  };
+
   const handleGoogleSignIn = async () => {
     setError("");
     setIsOAuthLoading("google");
@@ -58,7 +98,7 @@ function SignUpForm() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: getRedirectUrl(),
         },
       });
 
@@ -79,7 +119,7 @@ function SignUpForm() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "github",
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: getRedirectUrl(),
         },
       });
 
@@ -107,7 +147,7 @@ function SignUpForm() {
       if (authError) {
         setError(authError.message);
       } else {
-        router.push("/");
+        router.push("/dashboard");
         router.refresh();
       }
     } catch (err: any) {

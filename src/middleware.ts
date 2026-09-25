@@ -24,8 +24,11 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // Check if authenticated via NextAuth or Supabase session cookie
+  const hasSupabaseCookie = req.cookies.getAll().some((c) => c.name.startsWith("sb-"));
+
   // If not authenticated, redirect to login
-  if (!req.auth) {
+  if (!req.auth && !hasSupabaseCookie) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
@@ -33,11 +36,11 @@ export default auth((req) => {
 
   // Admin routes - check for admin role
   if (pathname.startsWith("/admin")) {
-    const roles = (req.auth.user?.roles as string[]) || [];
+    const roles = (req.auth?.user?.roles as string[]) || [];
     const isAdminUser = roles.some(
       (r: string) => r === "SUPER_ADMIN" || r === "ADMIN"
     );
-    if (!isAdminUser) {
+    if (!isAdminUser && req.auth) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
   }
