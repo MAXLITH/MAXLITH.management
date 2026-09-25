@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
 import { supabase } from "@/supabaseClient";
 
-function LoginForm() {
+function SignUpForm() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -21,14 +21,14 @@ function LoginForm() {
     setIsLoading(true);
 
     try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
+      const { data, error: authError } = await supabase.auth.signUp({
         email,
         password,
       });
 
       if (authError) {
         setError(authError.message);
-      } else if (data?.user) {
+      } else {
         router.push("/");
         router.refresh();
       }
@@ -53,10 +53,10 @@ function LoginForm() {
       {/* Form header */}
       <div className="mb-8">
         <h2 className="text-2xl font-semibold text-[var(--text-primary)] mb-2">
-          Welcome back
+          Create an account
         </h2>
         <p className="text-[var(--text-secondary)] text-sm">
-          Sign in to your MAXLITH workspace
+          Get started with your MAXLITH workspace
         </p>
       </div>
 
@@ -98,9 +98,9 @@ function LoginForm() {
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder="Create a password"
               required
-              autoComplete="current-password"
+              autoComplete="new-password"
               className="w-full h-11 px-4 pr-11 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 outline-none transition-all text-sm"
             />
             <button
@@ -123,7 +123,7 @@ function LoginForm() {
             <Loader2 size={18} className="animate-spin" />
           ) : (
             <>
-              Sign in with Email
+              Sign up with Email
               <ArrowRight size={16} />
             </>
           )}
@@ -137,11 +137,11 @@ function LoginForm() {
         </p>
       )}
 
-      {/* Navigation to Sign Up */}
+      {/* Navigation to Sign In */}
       <div className="mt-6 text-center text-sm text-[var(--text-secondary)]">
-        Don&apos;t have an account?{" "}
-        <Link href="/signup" className="text-[var(--accent)] hover:underline font-medium">
-          Sign up
+        Already have an account?{" "}
+        <Link href="/login" className="text-[var(--accent)] hover:underline font-medium">
+          Sign in
         </Link>
       </div>
 
@@ -155,7 +155,7 @@ function LoginForm() {
   );
 }
 
-export default function LoginPage() {
+export default function SignUpPage() {
   return (
     <div className="min-h-screen flex">
       {/* Left Panel - Branding */}
@@ -182,10 +182,10 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel - Login Form inside Suspense */}
+      {/* Right Panel - Sign Up Form inside Suspense */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6 sm:p-12 bg-[var(--bg-primary)]">
-        <Suspense fallback={<div className="text-xs text-[var(--text-muted)]">Loading login portal...</div>}>
-          <LoginForm />
+        <Suspense fallback={<div className="text-xs text-[var(--text-muted)]">Loading signup portal...</div>}>
+          <SignUpForm />
         </Suspense>
       </div>
     </div>
