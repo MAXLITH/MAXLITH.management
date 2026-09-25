@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
 import { signIn, useSession } from "next-auth/react";
+import { supabase } from "@/lib/supabase";
 
 function GoogleIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -61,21 +62,53 @@ function LoginForm() {
     return "/dashboard";
   };
 
-  // Redirect if already authenticated
+  // Check authentication session (NextAuth + Supabase)
   useEffect(() => {
     if (status === "authenticated" && session) {
       router.replace(getDestination());
+      return;
     }
+
+    // Check Supabase session
+    const checkSupabaseSession = async () => {
+      const { data: { session: supabaseSession } } = await supabase.auth.getSession();
+      if (supabaseSession) {
+        router.replace(getDestination());
+      }
+    };
+    checkSupabaseSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, supabaseSession) => {
+      if (supabaseSession) {
+        router.replace(getDestination());
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [status, session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGoogleSignIn = async () => {
     setError("");
     setIsOAuthLoading("google");
     try {
-      await signIn("google", { callbackUrl: getDestination() });
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const { error: sbError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+      if (sbError) {
+        // Fallback to NextAuth Google provider if Supabase OAuth is not configured on provider dashboard
+        await signIn("google", { callbackUrl: getDestination() });
+      }
     } catch (err) {
-      setError("Failed to start Google sign-in. Please try again.");
-      setIsOAuthLoading(null);
+      try {
+        await signIn("google", { callbackUrl: getDestination() });
+      } catch (fallbackErr) {
+        setError("Failed to start Google sign-in. Please try again.");
+        setIsOAuthLoading(null);
+      }
     }
   };
 
@@ -83,10 +116,21 @@ function LoginForm() {
     setError("");
     setIsOAuthLoading("github");
     try {
-      await signIn("github", { callbackUrl: getDestination() });
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      const { error: sbError } = await supabase.auth.signInWithOAuth({
+        provider: "github",
+        options: { redirectTo },
+      });
+      if (sbError) {
+        await signIn("github", { callbackUrl: getDestination() });
+      }
     } catch (err) {
-      setError("Failed to start GitHub sign-in. Please try again.");
-      setIsOAuthLoading(null);
+      try {
+        await signIn("github", { callbackUrl: getDestination() });
+      } catch (fallbackErr) {
+        setError("Failed to start GitHub sign-in. Please try again.");
+        setIsOAuthLoading(null);
+      }
     }
   };
 
@@ -96,6 +140,19 @@ function LoginForm() {
     setIsLoading(true);
 
     try {
+      // 1. Attempt Supabase Auth login first
+      const { data: sbData, error: sbError } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (!sbError && sbData?.session) {
+        router.push(getDestination());
+        router.refresh();
+        return;
+      }
+
+      // 2. Fallback to Credentials sign-in
       const result = await signIn("credentials", {
         email: email.trim().toLowerCase(),
         password,
@@ -117,6 +174,7 @@ function LoginForm() {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="w-full max-w-md">
