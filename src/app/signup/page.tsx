@@ -4,7 +4,6 @@ import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
-import { signIn } from "next-auth/react";
 import { supabase } from "@/supabaseClient";
 
 function GoogleIcon({ className = "w-4 h-4" }: { className?: string }) {
@@ -52,38 +51,43 @@ function SignUpForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOAuthLoading, setIsOAuthLoading] = useState<string | null>(null);
 
-  const handleOAuthSignIn = async (provider: "google" | "github") => {
+  const handleGoogleSignIn = async () => {
     setError("");
-    setIsOAuthLoading(provider);
+    setIsOAuthLoading("google");
     try {
-      const res = await signIn(provider, { callbackUrl: "/", redirect: false });
-      if (res?.error) {
-        const { error: supabaseError } = await supabase.auth.signInWithOAuth({
-          provider,
-          options: {
-            redirectTo: `${window.location.origin}/`,
-          },
-        });
-        if (supabaseError) {
-          setError(supabaseError.message);
-        }
-      } else if (res?.url) {
-        window.location.href = res.url;
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+
+      if (oauthError) {
+        setError(oauthError.message);
       }
     } catch (err: any) {
-      try {
-        const { error: supabaseError } = await supabase.auth.signInWithOAuth({
-          provider,
-          options: {
-            redirectTo: `${window.location.origin}/`,
-          },
-        });
-        if (supabaseError) {
-          setError(supabaseError.message);
-        }
-      } catch (sErr: any) {
-        setError(sErr?.message || `Failed to sign up with ${provider}.`);
+      setError(err?.message || "Failed to sign up with Google.");
+    } finally {
+      setIsOAuthLoading(null);
+    }
+  };
+
+  const handleGithubSignIn = async () => {
+    setError("");
+    setIsOAuthLoading("github");
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "github",
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+
+      if (oauthError) {
+        setError(oauthError.message);
       }
+    } catch (err: any) {
+      setError(err?.message || "Failed to sign up with GitHub.");
     } finally {
       setIsOAuthLoading(null);
     }
@@ -138,7 +142,7 @@ function SignUpForm() {
       <div className="grid grid-cols-2 gap-3 mb-6">
         <button
           type="button"
-          onClick={() => handleOAuthSignIn("google")}
+          onClick={handleGoogleSignIn}
           disabled={isLoading || isOAuthLoading !== null}
           className="h-11 px-4 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] hover:border-[var(--border-hover)] font-medium text-sm flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:opacity-50"
         >
@@ -152,7 +156,7 @@ function SignUpForm() {
 
         <button
           type="button"
-          onClick={() => handleOAuthSignIn("github")}
+          onClick={handleGithubSignIn}
           disabled={isLoading || isOAuthLoading !== null}
           className="h-11 px-4 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] hover:border-[var(--border-hover)] font-medium text-sm flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:opacity-50"
         >
