@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
 import { supabase } from "@/supabaseClient";
 
@@ -43,6 +43,8 @@ function GithubIcon({ className = "w-4 h-4" }: { className?: string }) {
 
 function SignUpForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -51,8 +53,23 @@ function SignUpForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [isOAuthLoading, setIsOAuthLoading] = useState<string | null>(null);
 
+  const getDestination = () => {
+    if (callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")) {
+      return callbackUrl;
+    }
+    return "/dashboard";
+  };
+
   useEffect(() => {
     let isMounted = true;
+
+    const handleSessionRedirect = (session: any) => {
+      if (session && isMounted) {
+        const destination = getDestination();
+        router.push(destination);
+        router.refresh();
+      }
+    };
 
     // Check existing session on mount (handles refresh & logged-in users)
     supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
@@ -60,19 +77,15 @@ function SignUpForm() {
         console.error("Error getting session:", sessionError.message);
         return;
       }
-      if (session && isMounted) {
-        router.push("/dashboard");
-        router.refresh();
-      }
+      handleSessionRedirect(session);
     });
 
     // Listen for auth state changes (handles OAuth redirect callback)
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session && isMounted) {
-        router.push("/dashboard");
-        router.refresh();
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION" || session) && isMounted) {
+        handleSessionRedirect(session);
       }
     });
 
@@ -80,11 +93,12 @@ function SignUpForm() {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, [router, searchParams]);
 
   const getRedirectUrl = () => {
     if (typeof window !== "undefined") {
-      return `${window.location.origin}/login`;
+      const callbackParam = callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : "";
+      return `${window.location.origin}/login${callbackParam}`;
     }
     return process.env.NEXT_PUBLIC_APP_URL
       ? `${process.env.NEXT_PUBLIC_APP_URL}/login`
@@ -147,7 +161,7 @@ function SignUpForm() {
       if (authError) {
         setError(authError.message);
       } else {
-        router.push("/dashboard");
+        router.push(getDestination());
         router.refresh();
       }
     } catch (err: any) {
