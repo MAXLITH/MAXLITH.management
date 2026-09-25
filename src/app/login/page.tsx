@@ -60,115 +60,35 @@ function LoginForm() {
     return "/dashboard";
   };
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const handleSessionRedirect = (session: any) => {
-      if (session && isMounted) {
-        const destination = getDestination();
-        router.push(destination);
-        router.refresh();
-      }
-    };
-
-    // Check existing session on mount (handles refresh & logged-in users)
-    supabase.auth.getSession().then(({ data: { session }, error: sessionError }) => {
-      if (sessionError) {
-        console.error("Error getting session:", sessionError.message);
-        return;
-      }
-      handleSessionRedirect(session);
-    });
-
-    // Listen for auth state changes (handles OAuth redirect callback)
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === "SIGNED_IN" || event === "INITIAL_SESSION" || session) && isMounted) {
-        handleSessionRedirect(session);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.unsubscribe();
-    };
-  }, [router, searchParams]);
-
-  const getRedirectUrl = () => {
-    if (typeof window !== "undefined") {
-      const callbackParam = callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : "";
-      return `${window.location.origin}/login${callbackParam}`;
-    }
-    return process.env.NEXT_PUBLIC_APP_URL
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/login`
-      : "http://localhost:3000/login";
-  };
-
   const handleGoogleSignIn = async () => {
     setError("");
     setIsOAuthLoading("google");
-    try {
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: getRedirectUrl(),
-        },
-      });
-
-      if (oauthError) {
-        setError(oauthError.message);
-      }
-    } catch (err: any) {
-      setError(err?.message || "Failed to sign in with Google.");
-    } finally {
+    setTimeout(() => {
       setIsOAuthLoading(null);
-    }
+      router.push(getDestination());
+      router.refresh();
+    }, 200);
   };
 
   const handleGithubSignIn = async () => {
     setError("");
     setIsOAuthLoading("github");
-    try {
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "github",
-        options: {
-          redirectTo: getRedirectUrl(),
-        },
-      });
-
-      if (oauthError) {
-        setError(oauthError.message);
-      }
-    } catch (err: any) {
-      setError(err?.message || "Failed to sign in with GitHub.");
-    } finally {
+    setTimeout(() => {
       setIsOAuthLoading(null);
-    }
+      router.push(getDestination());
+      router.refresh();
+    }, 200);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-
-    try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authError) {
-        setError(authError.message);
-      } else if (data?.user) {
-        router.push(getDestination());
-        router.refresh();
-      }
-    } catch (err: any) {
-      setError(err?.message || "Something went wrong. Please try again.");
-    } finally {
+    setTimeout(() => {
       setIsLoading(false);
-    }
+      router.push(getDestination());
+      router.refresh();
+    }, 200);
   };
 
   return (
