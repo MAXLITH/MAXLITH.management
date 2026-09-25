@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
-import { supabase } from "@/supabaseClient";
+import { signIn, useSession } from "next-auth/react";
 
 function GoogleIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -44,6 +44,7 @@ function GithubIcon({ className = "w-4 h-4" }: { className?: string }) {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
   const callbackUrl = searchParams.get("callbackUrl");
 
   const [email, setEmail] = useState("");
@@ -60,35 +61,61 @@ function LoginForm() {
     return "/dashboard";
   };
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (status === "authenticated" && session) {
+      router.replace(getDestination());
+    }
+  }, [status, session]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleGoogleSignIn = async () => {
     setError("");
     setIsOAuthLoading("google");
-    setTimeout(() => {
+    try {
+      await signIn("google", { callbackUrl: getDestination() });
+    } catch (err) {
+      setError("Failed to start Google sign-in. Please try again.");
       setIsOAuthLoading(null);
-      router.push(getDestination());
-      router.refresh();
-    }, 200);
+    }
   };
 
   const handleGithubSignIn = async () => {
     setError("");
     setIsOAuthLoading("github");
-    setTimeout(() => {
+    try {
+      await signIn("github", { callbackUrl: getDestination() });
+    } catch (err) {
+      setError("Failed to start GitHub sign-in. Please try again.");
       setIsOAuthLoading(null);
-      router.push(getDestination());
-      router.refresh();
-    }, 200);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-    setTimeout(() => {
+
+    try {
+      const result = await signIn("credentials", {
+        email: email.trim().toLowerCase(),
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError("Invalid email or password. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (result?.ok) {
+        router.push(getDestination());
+        router.refresh();
+      }
+    } catch (err) {
+      setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
-      router.push(getDestination());
-      router.refresh();
-    }, 200);
+    }
   };
 
   return (
@@ -186,6 +213,12 @@ function LoginForm() {
             >
               Password
             </label>
+            <Link
+              href="/forgot-password"
+              className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors"
+            >
+              Forgot password?
+            </Link>
           </div>
           <div className="relative">
             <input

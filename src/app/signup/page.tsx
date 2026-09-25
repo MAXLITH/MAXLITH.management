@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2, ArrowRight } from "lucide-react";
-import { supabase } from "@/supabaseClient";
+import { signIn, useSession } from "next-auth/react";
 
 function GoogleIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -44,6 +44,7 @@ function GithubIcon({ className = "w-4 h-4" }: { className?: string }) {
 function SignUpForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session, status } = useSession();
   const callbackUrl = searchParams.get("callbackUrl");
 
   const [email, setEmail] = useState("");
@@ -60,35 +61,79 @@ function SignUpForm() {
     return "/dashboard";
   };
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (status === "authenticated" && session) {
+      router.replace(getDestination());
+    }
+  }, [status, session]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleGoogleSignIn = async () => {
     setError("");
     setIsOAuthLoading("google");
-    setTimeout(() => {
+    try {
+      await signIn("google", { callbackUrl: getDestination() });
+    } catch (err) {
+      setError("Failed to start Google sign-in. Please try again.");
       setIsOAuthLoading(null);
-      router.push(getDestination());
-      router.refresh();
-    }, 200);
+    }
   };
 
   const handleGithubSignIn = async () => {
     setError("");
     setIsOAuthLoading("github");
-    setTimeout(() => {
+    try {
+      await signIn("github", { callbackUrl: getDestination() });
+    } catch (err) {
+      setError("Failed to start GitHub sign-in. Please try again.");
       setIsOAuthLoading(null);
-      router.push(getDestination());
-      router.refresh();
-    }, 200);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
-    setTimeout(() => {
+
+    try {
+      // First create the account via API
+      const signupRes = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+      });
+
+      if (!signupRes.ok) {
+        const data = await signupRes.json().catch(() => ({}));
+        setError(data.error || "Failed to create account. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Now sign in with the new credentials
+      const result = await signIn("credentials", {
+        email: email.trim().toLowerCase(),
+        password,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError("Account created but sign-in failed. Please go to the login page.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (result?.ok) {
+        router.push(getDestination());
+        router.refresh();
+      }
+    } catch (err) {
+      setError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
-      router.push(getDestination());
-      router.refresh();
-    }, 200);
+    }
   };
 
   return (
@@ -195,6 +240,7 @@ function SignUpForm() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Create a password"
               required
+              minLength={6}
               autoComplete="new-password"
               className="w-full h-11 px-4 pr-11 rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20 outline-none transition-all text-sm"
             />
@@ -206,6 +252,9 @@ function SignUpForm() {
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          <p className="text-xs text-[var(--text-muted)] mt-1.5">
+            Must be at least 6 characters
+          </p>
         </div>
 
         {/* Submit */}

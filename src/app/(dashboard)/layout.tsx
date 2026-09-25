@@ -9,16 +9,12 @@ export default async function DashboardLayout({
 }) {
   const session = await auth();
 
-  const user = session?.user || {
-    id: "user_supabase",
-    email: "user@maxlith.com",
-    firstName: "MAXLITH",
-    lastName: "Member",
-    roles: ["EMPLOYEE"],
-  };
+  if (!session?.user) {
+    redirect("/login");
+  }
 
   return (
-    <DashboardShell user={user}>
+    <DashboardShell user={session.user}>
       {children}
     </DashboardShell>
   );
